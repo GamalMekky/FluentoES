@@ -19,6 +19,7 @@ export const SentenceCard: React.FC<SentenceCardProps> = ({
   onSavedToDeck,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [speed, setSpeed] = useState<0.7 | 1.0>(1.0);
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -33,12 +34,22 @@ export const SentenceCard: React.FC<SentenceCardProps> = ({
   const handlePlayTTS = async (customSpeed?: 0.7 | 1.0) => {
     const playSpeed = customSpeed ?? speed;
     setIsPlaying(true);
+    setErrorMessage(null);
     try {
-      await playSpanishTTS(card.spanish, dialect, playSpeed, () => {
-        setIsPlaying(false);
-      });
+      await playSpanishTTS(
+        card.spanish,
+        dialect,
+        playSpeed,
+        () => {
+          setIsPlaying(false);
+          setIsAudioLoading(false);
+        },
+        (loading) => setIsAudioLoading(loading),
+        (err) => setErrorMessage(err)
+      );
     } catch {
       setIsPlaying(false);
+      setIsAudioLoading(false);
     }
   };
 
@@ -147,15 +158,22 @@ export const SentenceCard: React.FC<SentenceCardProps> = ({
           {/* TTS Listen Button */}
           <button
             onClick={() => handlePlayTTS()}
-            title="استمع للنطق الأصلي"
+            disabled={isAudioLoading}
+            title={isAudioLoading ? 'جارٍ توليد الصوت الإسباني الأصلي...' : 'استمع للنطق الإسباني الأصلي'}
             aria-label="استمع للنطق"
             className={`p-2 rounded-xl transition-colors flex items-center justify-center ${
               isPlaying
                 ? 'bg-amber-500 text-white'
+                : isAudioLoading
+                ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-600'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
-            <Volume2 className="w-4 h-4" />
+            {isAudioLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-amber-600 dark:text-amber-400" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
           </button>
 
           {/* Speed Toggle (0.7x / 1.0x) */}

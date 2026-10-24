@@ -32,6 +32,104 @@ function cleanJsonResponse(text: string): string {
   return cleaned.trim();
 }
 
+// 0. Native Spanish TTS Endpoint using Gemini Flash Lite TTS
+app.post('/api/gemini/tts', async (req, res) => {
+  try {
+    const {
+      text,
+      voiceName = 'Kore',
+      dialect = 'Spain (Castellano)',
+      speed = 1.0,
+      mode = 'normal',
+    } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text is required for TTS' });
+    }
+
+    // Clean text: strip Arabic explanations/notes, brackets, parenthetical translations, emojis, etc.
+    let cleanSpanish = text
+      .replace(/\[.*?\]/g, '') // remove brackets like [رسمي] or [θ]
+      .replace(/\(.*?\)/g, '') // remove parentheses with translations/notes
+      .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '') // remove Arabic script
+      .replace(/[«»""'']/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // If text was purely Arabic or stripped empty, fallback to basic text without brackets
+    if (!cleanSpanish || cleanSpanish.length < 2) {
+      cleanSpanish = text.replace(/\[.*?\]/g, '').trim();
+    }
+
+    const isSpain = !dialect || dialect.includes('Spain') || dialect.includes('Castellano');
+
+    let styleInstruction = '';
+    if (isSpain) {
+      styleInstruction =
+        'Read the following text as a native speaker of Castilian Spanish from Madrid (Spain), with a natural, warm, professional actress-like voice, clear articulation, and authentic Spanish intonation and rhythm. Use the Spain distinction sound for z/c (θ). Never use an English accent.';
+    } else {
+      styleInstruction =
+        'Read the following text as a native speaker of neutral Latin American Spanish, with a natural, warm, professional voice, clear articulation, seseo pronunciation, and authentic Spanish intonation and rhythm. Never use an English accent.';
+    }
+
+    if (speed < 0.85 || mode === 'slow') {
+      styleInstruction += ' Speak slowly and clearly, for a language learner.';
+    } else if (speed > 1.1 || mode === 'fast') {
+      styleInstruction += ' Speak at natural fast conversational speed with native reductions.';
+    }
+
+    const promptText = `${styleInstruction} Text: "${cleanSpanish}"`;
+
+    const validVoices = ['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir'];
+    const chosenVoice = validVoices.includes(voiceName) ? voiceName : 'Kore';
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash-lite-tts',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: promptText,
+              speechMetadata: {
+                style: isSpain
+                  ? 'Authentic native Castilian Spanish from Madrid, Spain, warm professional delivery'
+                  : 'Authentic native neutral Latin American Spanish, warm professional delivery',
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: chosenVoice },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      throw new Error('No audio returned from Gemini TTS model');
+    }
+
+    return res.json({
+      audioBase64: base64Audio,
+      mimeType: 'audio/wav',
+      cleanText: cleanSpanish,
+      voice: chosenVoice,
+    });
+  } catch (error: any) {
+    console.error('Gemini TTS endpoint error:', error);
+    return res.status(500).json({
+      error: 'تعذر توليد النطق الصوتي الأصلي عبر الذكاء الاصطناعي.',
+      details: error.message,
+    });
+  }
+});
+
 // 1. Pronunciation Analysis Endpoint
 app.post('/api/gemini/analyze-pronunciation', async (req, res) => {
   try {

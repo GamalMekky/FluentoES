@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
-import { X, Download, Upload, RotateCcw, Globe, Target, Award, Check, AlertCircle } from 'lucide-react';
+import { X, Download, Upload, RotateCcw, Globe, Target, Award, Check, AlertCircle, Volume2, RefreshCw } from 'lucide-react';
 import { UserProfile, DialectType, CEFRLevel } from '../types';
 import { exportAllDataAsJSON, importAllDataFromJSON } from '../utils/storage';
+import {
+  AVAILABLE_TTS_VOICES,
+  getActiveTTSVoice,
+  setActiveTTSVoice,
+  VOICE_TEST_SENTENCES,
+  playSpanishTTS,
+} from '../utils/speech';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -20,6 +27,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>(() => getActiveTTSVoice());
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  const [playingTestId, setPlayingTestId] = useState<string | null>(null);
+
+  const handleSelectVoice = (voiceId: string) => {
+    setActiveTTSVoice(voiceId);
+    setSelectedVoiceId(voiceId);
+  };
+
+  const handlePreviewVoice = (voiceId: string) => {
+    setPreviewingVoiceId(voiceId);
+    setActiveTTSVoice(voiceId);
+    setSelectedVoiceId(voiceId);
+    const previewText = profile.dialect === 'Spain (Castellano)'
+      ? 'Hola, soy tu voz nativa de referencia en español de España. Mucho gusto.'
+      : 'Hola, soy tu voz nativa de referencia en español para América Latina.';
+    playSpanishTTS(
+      previewText,
+      profile.dialect,
+      1.0,
+      () => setPreviewingVoiceId(null),
+      undefined,
+      () => setPreviewingVoiceId(null)
+    );
+  };
+
+  const handlePlayTestSentence = (spanishText: string, testId: string) => {
+    setPlayingTestId(testId);
+    playSpanishTTS(
+      spanishText,
+      profile.dialect,
+      1.0,
+      () => setPlayingTestId(null),
+      undefined,
+      () => setPlayingTestId(null)
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -110,6 +154,129 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   تستخدم Ustedes ونطق السين (Seseo)
                 </span>
               </button>
+            </div>
+          </div>
+
+          {/* 1.5. Native Spanish Voice Picker */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md">
+                محرك Gemini TTS الأصلي
+              </span>
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                <Volume2 className="w-3.5 h-3.5 inline ml-1 text-amber-500" />
+                صوت القارئ الإسباني (Voz Nativa):
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              {AVAILABLE_TTS_VOICES.map((v) => {
+                const isSelected = selectedVoiceId === v.id;
+                return (
+                  <div
+                    key={v.id}
+                    onClick={() => handleSelectVoice(v.id)}
+                    className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      isSelected
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-400 text-slate-900 dark:text-slate-100 shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePreviewVoice(v.id);
+                        }}
+                        disabled={previewingVoiceId === v.id}
+                        title={`استمع لعينة من صوت ${v.nameAr.split('-')[0]}`}
+                        className={`p-2 rounded-xl transition-colors shrink-0 ${
+                          previewingVoiceId === v.id
+                            ? 'bg-amber-500 text-slate-950 animate-pulse'
+                            : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200'
+                        }`}
+                      >
+                        {previewingVoiceId === v.id ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold">{v.nameAr}</span>
+                          {v.recommended && (
+                            <span className="text-[10px] bg-amber-500 text-slate-950 font-bold px-1.5 py-0.2 rounded-md">
+                              موصى به
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block leading-tight mt-0.5">
+                          {v.descriptionAr}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 border-slate-300 dark:border-slate-600">
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-amber-500" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 1.6. Native Voice Test Section (اختبار الصوت) */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                اختبار الصوت الإسباني الأصلي (Prueba de Voz)
+              </span>
+              <span className="text-[10px] text-slate-400">
+                تأكد من خلو النطق من اللكنة الإنجليزية
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-normal">
+              اضغط على أي جملة للاستماع إلى النطق الإسباني الأصلي للأصوات الدقيقة (الراء المشددة RR، وثاء إسبانيا Z/C، والخاء J، وفارق P عن B):
+            </p>
+
+            <div className="space-y-2">
+              {VOICE_TEST_SENTENCES.map((test) => (
+                <div
+                  key={test.id}
+                  className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono font-bold text-slate-900 dark:text-slate-100 text-left truncate" dir="ltr">
+                      {test.spanish}
+                    </p>
+                    <span className="text-[10px] text-amber-700 dark:text-amber-400 block mt-0.5">
+                      🎯 {test.phonemeFocus}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePlayTestSentence(test.spanish, test.id)}
+                    disabled={playingTestId === test.id}
+                    className={`p-2 rounded-xl transition-colors shrink-0 flex items-center gap-1 ${
+                      playingTestId === test.id
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    {playingTestId === test.id ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                    <span className="text-[10px] font-bold">استمع</span>
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 
